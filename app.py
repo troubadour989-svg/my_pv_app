@@ -36,29 +36,18 @@ if "file_prov_suffix" not in st.session_state:
 def get_template_excel():
     template_data = [
         {
-            "大区": "华中",
+            "大区": "华南大区",
             "适用省份": "湖南省",
             "集团品牌": "正泰",
             "识别关键词": "湖南湘泰",
         },
         {
-            "大区": "西部",
+            "大区": "西部大区",
             "适用省份": "重庆市",
             "集团品牌": "TCL",
             "识别关键词": "重庆毅敏",
         },
-        {
-            "大区": "全国",
-            "适用省份": "global",
-            "集团品牌": "创维",
-            "识别关键词": "创维",
-        },
-        {
-            "大区": "全国",
-            "适用省份": "global",
-            "集团品牌": "村委自持",
-            "识别关键词": "村集体",
-        },
+
     ]
     df_template = pd.DataFrame(template_data)
     output = io.BytesIO()
@@ -83,37 +72,68 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 2. 上传自定义规则
+# 2. 上传自定义规则
     custom_rule_file = st.file_uploader(
-        "📤 上传新规则表 (更新匹配库)", type=["xlsx"]
+        "📤 上传新增/临时规则表 (自动追加合并)", 
+        type=["xlsx"],
+        help="支持仅包含新增几行的小表格，系统将自动与底库智能合并，绝不丢失原有规则！"
     )
     default_mapping_file = "brand_mapping.xlsx"
     required_cols = {"大区", "适用省份", "集团品牌", "识别关键词"}
 
+    # 第一步：先读取系统自带的基准底库
+    if os.path.exists(default_mapping_file):
+        try:
+            base_df = pd.read_excel(default_mapping_file)
+            base_df.columns = base_df.columns.astype(str).str.strip()
+        except Exception:
+            base_df = pd.DataFrame(columns=list(required_cols))
+    else:
+        base_df = pd.DataFrame(columns=list(required_cols))
+
+    # 第二步：如果有同事上传新表，执行【智能增量合并】
     if custom_rule_file:
         try:
             uploaded_df = pd.read_excel(custom_rule_file)
             uploaded_df.columns = uploaded_df.columns.astype(str).str.strip()
+
             if not required_cols.issubset(set(uploaded_df.columns)):
-                st.error("❌ 格式错误！表格必须包含：大区、适用省份、集团品牌、识别关键词")
-                brand_mapping_df = pd.DataFrame(columns=list(required_cols))
+                missing = required_cols - set(uploaded_df.columns)
+                st.error(f"❌ 上传失败！表格缺少必要列：{missing}")
+                brand_mapping_df = base_df
             else:
-                brand_mapping_df = uploaded_df
+                # 核心机制：同事上传的排在前面，与底库合并后，按【适用省份 + 识别关键词】去重
+                # keep='first' 保证：若有冲突，以同事最新上传的为准！
+                combined_df = pd.concat([uploaded_df, base_df], ignore_index=True)
+                
+                # 剔除空关键词
+                combined_df = combined_df.dropna(subset=["识别关键词"])
+                combined_df["_clean_kw"] = combined_df["识别关键词"].astype(str).str.strip()
+                combined_df = combined_df[combined_df["_clean_kw"] != ""]
+                
+                # 智能去重（适用省份 + 关键词）
+                combined_df = combined_df.drop_duplicates(
+                    subset=["适用省份", "_clean_kw"], 
+                    keep="first"
+                ).drop(columns=["_clean_kw"])
+
+                brand_mapping_df = combined_df
+                
+                # 给同事极其温暖、确定的正反馈
                 st.success(
-                    f"✅ 已加载自定义规则，共 {len(brand_mapping_df)} 条！"
+                    f"✅ **智能增量合并成功！**\n\n"
+                    f"- 系统基准底库：`{len(base_df)}` 条\n"
+                    f"- 您上传的规则：`{len(uploaded_df)}` 条\n"
+                    f"- 智能合并去重后，当前全库共生效：**`{len(brand_mapping_df)}`** 条！"
                 )
         except Exception as e:
             st.error(f"读取规则文件失败: {e}")
-            brand_mapping_df = pd.DataFrame(columns=list(required_cols))
-    elif os.path.exists(default_mapping_file):
-        brand_mapping_df = pd.read_excel(default_mapping_file)
-        brand_mapping_df.columns = brand_mapping_df.columns.astype(str).str.strip()
-        st.info(f"正在使用系统默认规则表: {default_mapping_file}")
+            brand_mapping_df = base_df
     else:
-        st.warning("未检测到本地 brand_mapping.xlsx，将仅使用自然人规则。")
-        brand_mapping_df = pd.DataFrame(columns=list(required_cols))
+        # 没有上传时，直接使用基准底库
+        brand_mapping_df = base_df
 
-    st.write(f"当前生效规则库：**{len(brand_mapping_df)}** 条")
+    st.caption(f"📊 当前内存生效规则总数：**{len(brand_mapping_df)}** 条")
 
     st.markdown("---")
     st.header("📍 运行模式")

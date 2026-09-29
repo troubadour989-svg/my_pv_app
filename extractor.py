@@ -273,7 +273,7 @@ class NationalSolarExtractor:
 
         # 2.4 非自然人兜底
         mask_unresolved = rem_mask & is_non_person
-        df.loc[mask_unresolved, "所属集团"] = "其他非自然人"
+        df.loc[mask_unresolved, "所属集团"] = "其他非自然人_需验证"
         df.loc[mask_unresolved, "集团判断关键字"] = "非自然人"
 
         # ---------------------------------------------------------
@@ -320,7 +320,7 @@ class NationalSolarExtractor:
         # 品牌驱动判定
         group_col = df["所属集团"].fillna("")
         is_effective_brand = (group_col != "") & (
-            ~group_col.isin(["自然人", "其他非自然人", ""])
+            ~group_col.isin(["自然人", "其他非自然人_需验证", ""])
         )
         cond_allow_public = is_public_allowed & found_cat.isin(public_cats)
 

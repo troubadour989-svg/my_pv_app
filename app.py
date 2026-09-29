@@ -318,7 +318,9 @@ if st.session_state["cleaned_df"] is not None:
     )
 
     # 导出下载按钮（文件名动态包含所有涉及省份）
-    time_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    tz_beijing = datetime.timezone(datetime.timedelta(hours=8))
+    time_tag = datetime.datetime.now(tz_beijing).strftime("%Y%m%d_%H%M")
+    
     export_filename = (
         f"全国备案清洗_{st.session_state['file_prov_suffix']}_{time_tag}.xlsx"
     )
